@@ -3,7 +3,7 @@ from telegram import Bot
 
 async def main():
     # 1. 뉴스 검색 키워드 (원하는 대로 수정 가능합니다)
-    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발"]
+    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발","주민공람"]
     news_text = "📢 오늘의 부동산 미래 가치 선점 뉴스\n\n"
     
     # GitHub Secrets에 저장한 열쇠들을 불러옵니다

@@ -13,8 +13,8 @@ async def main():
     }
     
     for kw in keywords:
-        # 네이버 뉴스에서 키워드당 최근 뉴스 3개씩 가져오기
-        url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=3&sort=sim"
+        # 네이버 뉴스에서 키워드당 최근 뉴스 5개씩 가져오기
+        url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=5&sort=sim"
         res = requests.get(url, headers=headers).json()
         
         if 'items' in res:

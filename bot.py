@@ -1,51 +1,62 @@
 import os, requests, asyncio
 from telegram import Bot
-from difflib import SequenceMatcher # 제목 유사도를 계산하는 도구
+from difflib import SequenceMatcher
 
-# 두 문장이 얼마나 비슷한지 측정하는 함수 (0~1 사이 값)
 def is_similar(a, b):
     return SequenceMatcher(None, a, b).ratio()
 
 async def main():
-    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발","주민공람"]
-    news_text = "📢 오늘의 부동산 미래 가치 선점 뉴스 (중복 제거)\n\n"
+    # 키워드 설정 (주민공람 추가 완벽합니다!)
+    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발", "주민공람"]
     
     headers = {
         "X-Naver-Client-Id": os.environ['NAVER_ID'], 
         "X-Naver-Client-Secret": os.environ['NAVER_SECRET']
     }
     
-    # 이미 추가된 기사 제목들을 저장하는 리스트
     added_titles = []
+    messages = [] # 메시지들을 담을 리스트
+    current_message = "📢 오늘의 부동산 미래 가치 선점 뉴스 (중복 제거)\n\n"
 
     for kw in keywords:
-        # 필터링을 위해 넉넉하게 15개를 가져옵니다.
         url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=15&sort=sim"
         res = requests.get(url, headers=headers).json()
         
-        count = 0 # 키워드당 채울 기사 개수 카운트
+        count = 0 
         if 'items' in res:
             for item in res['items']:
-                if count >= 5: # 5개를 다 채웠으면 다음 키워드로
-                    break
+                if count >= 5: break
                 
-                # HTML 태그 제거 및 특수문자 정리
-                title = item['title'].replace('<b>','').replace('</b>','').replace('&quot;','"')
+                # 제목 깔끔하게 정리 (태그 및 특수기호 변환)
+                title = item['title'].replace('<b>','').replace('</b>','').replace('&quot;','"').replace('&amp;','&').replace('&lt;','<').replace('&gt;','>')
                 
-                # [핵심] 기존에 담긴 기사들과 유사도 비교
                 duplicate = False
                 for existing_title in added_titles:
-                    if is_similar(title, existing_title) > 0.7: # 70% 이상 비슷하면 중복으로 간주
+                    if is_similar(title, existing_title) > 0.7: 
                         duplicate = True
                         break
                 
                 if not duplicate:
-                    news_text += f"🔹 {kw}\n- {title}\n- {item['link']}\n\n"
-                    added_titles.append(title) # 비교를 위해 리스트에 저장
+                    entry = f"🔹 {kw}\n- {title}\n- {item['link']}\n\n"
+                    
+                    # 텔레그램 글자수 제한(4000자) 체크
+                    if len(current_message) + len(entry) > 3800:
+                        messages.append(current_message)
+                        current_message = entry
+                    else:
+                        current_message += entry
+                        
+                    added_titles.append(title)
                     count += 1
+    
+    messages.append(current_message) # 마지막 메시지 추가
 
     bot = Bot(token=os.environ['TELEGRAM_TOKEN'])
-    await bot.send_message(chat_id=os.environ['CHAT_ID'], text=news_text)
+    
+    # 생성된 모든 메시지 순차 전송
+    for msg in messages:
+        if msg.strip(): # 비어있지 않은 경우에만 전송
+            await bot.send_message(chat_id=os.environ['CHAT_ID'], text=msg)
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -19,8 +19,8 @@ async def main():
     added_titles = []
 
     for kw in keywords:
-        # 필터링을 위해 넉넉하게 20개를 가져옵니다.
-        url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=20&sort=sim"
+        # 필터링을 위해 넉넉하게 15개를 가져옵니다.
+        url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=15&sort=sim"
         res = requests.get(url, headers=headers).json()
         
         count = 0 # 키워드당 채울 기사 개수 카운트

@@ -32,7 +32,7 @@ async def main():
                 
                 duplicate = False
                 for existing_title in added_titles:
-                    if is_similar(title, existing_title) > 0.7: 
+                    if is_similar(title, existing_title) > 0.4: 
                         duplicate = True
                         break
                 

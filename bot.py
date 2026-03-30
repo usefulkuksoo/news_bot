@@ -35,7 +35,7 @@ async def main():
                 # [핵심] 기존에 담긴 기사들과 유사도 비교
                 duplicate = False
                 for existing_title in added_titles:
-                    if is_similar(title, existing_title) > 0.5: # 50% 이상 비슷하면 중복으로 간주
+                    if is_similar(title, existing_title) > 0.7: # 70% 이상 비슷하면 중복으로 간주
                         duplicate = True
                         break
                 

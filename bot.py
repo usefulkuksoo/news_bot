@@ -7,7 +7,7 @@ def is_similar(a, b):
 
 async def main():
     # 키워드 설정
-    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발", "주민공람", "도시개발", "재개발", "고속도로"]
+    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발", "주민공람", "도시개발", "재개발", "고속도로", " 개발행위허가제한지역"]
     
     headers = {
         "X-Naver-Client-Id": os.environ['NAVER_ID'], 

@@ -6,8 +6,8 @@ def is_similar(a, b):
     return SequenceMatcher(None, a, b).ratio()
 
 async def main():
-    # 키워드 설정 (주민공람 추가 완벽합니다!)
-    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발", "주민공람"]
+    # 키워드 설정
+    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발", "주민공람", "도시개발", "재개발", "고속도로"]
     
     headers = {
         "X-Naver-Client-Id": os.environ['NAVER_ID'], 
@@ -19,7 +19,7 @@ async def main():
     current_message = "📢 오늘의 부동산 미래 가치 선점 뉴스 (중복 제거)\n\n"
 
     for kw in keywords:
-        url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=15&sort=sim"
+        url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=10&sort=sim"
         res = requests.get(url, headers=headers).json()
         
         count = 0 

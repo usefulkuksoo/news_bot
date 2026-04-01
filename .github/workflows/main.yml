@@ -1,34 +1,47 @@
 name: Real Estate News Bot
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # ✅ 최상단으로 이동
+
 on:
   schedule:
-    # 9:00(UTC 00:00), 13:00(UTC 04:00), 19:00(UTC 10:00)
+    # KST 기준: 09:00, 13:00, 19:00
     - cron: '0 0,4,10 * * *'
-  workflow_dispatch: 
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions: # 저장소에 기록 파일을 쓸 수 있는 권한 추가
+    permissions:
       contents: write
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0              # ✅ push 충돌 방지
+
       - name: 파이썬 설치
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+
       - name: 필요 도구 설치
         run: pip install python-telegram-bot requests
+
       - name: 비서 실행
         env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true 
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           NAVER_ID: ${{ secrets.NAVER_ID }}
           NAVER_SECRET: ${{ secrets.NAVER_SECRET }}
-        run: python bot.py
+        run: python main.py
+
       - name: 기록 업데이트 (장부 저장)
         run: |
           git config --global user.name "NewsBot"
-          git config --global user.email "bot@github.com"
-          git add seen_news.txt || exit 0
-          git commit -m "Update seen news history" || exit 0
+          git config --global user.email "bot@example.com"
+          touch seen_news.txt                          # ✅ 파일 없을 때 대비
+          git add seen_news.txt
+          git diff --staged --quiet && echo "변경 없음" && exit 0
+          git commit -m "Update seen news history"
           git push

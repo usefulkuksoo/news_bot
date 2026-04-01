@@ -4,11 +4,14 @@ from telegram import Bot
 def is_similar(a, b):
     def clean(text):
         text = re.sub(r'<.*?>|&\w+;', '', text)
-        return re.sub(r'[^가-힣a-zA-Z0-9\s]', '', text).split()  # 단어 단위
+        return re.sub(r'[^가-힣a-zA-Z0-9\s]', '', text).split()
     a_words, b_words = set(clean(a)), set(clean(b))
     if not a_words or not b_words:
         return 0
     return len(a_words & b_words) / min(len(a_words), len(b_words))
+
+def escape_html(text):
+    return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 async def main():
     history_file = "seen_news.txt"
@@ -31,42 +34,46 @@ async def main():
 
     for kw in keywords:
         url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=20&sort=sim"
-        
-        # ✅ 에러 처리 추가
+
         try:
             res = requests.get(url, headers=headers, timeout=10).json()
         except Exception as e:
             print(f"[{kw}] API 요청 실패: {e}")
             continue
 
+        # ✅ 에러 응답 감지
+        if 'items' not in res:
+            print(f"[{kw}] 응답 이상: {res}")
+            continue
+
         category_entries = []
 
-        if 'items' in res:
-            for item in res['items']:
-                if len(category_entries) >= 5:
-                    break
+        for item in res['items']:
+            if len(category_entries) >= 5:
+                break
 
-                # ✅ HTML 태그 및 특수문자 제거
-                title = re.sub(r'<.*?>', '', item['title']).replace('&quot;', '"').replace('&amp;', '&')
+            title = re.sub(r'<.*?>', '', item['title']).replace('&quot;', '"').replace('&amp;', '&')
 
-                is_duplicate = any(
-                    is_similar(title, existing) > 0.4
-                    for existing in (old_titles + new_titles)
-                )
+            is_duplicate = any(
+                is_similar(title, existing) > 0.4
+                for existing in (old_titles + new_titles)
+            )
 
-                if not is_duplicate:
-                    entry = f"📍 {title}\n   🔗 {item['link']}\n"
-                    category_entries.append(entry)
-                    new_titles.append(title)
+            if not is_duplicate:
+                # ✅ HTML 이스케이프 처리
+                title_safe = escape_html(title)
+                entry = f"📍 {title_safe}\n   🔗 {item['link']}\n"
+                category_entries.append(entry)
+                new_titles.append(title)
 
         if category_entries:
-            # ✅ parse_mode='HTML' 방식으로 변경
-            kw_header = f"\n🔹 <b>{kw}</b>\n"
+            kw_header = f"\n🔹 <b>{escape_html(kw)}</b>\n"
             combined_category_text = kw_header + "\n".join(category_entries) + "\n"
 
             if len(current_message) + len(combined_category_text) > 3800:
                 messages.append(current_message)
-                current_message = combined_category_text
+                # ✅ 분할 시 헤더 유지
+                current_message = f"📢 (계속)\n{combined_category_text}"
             else:
                 current_message += combined_category_text
 
@@ -74,10 +81,8 @@ async def main():
         messages.append(current_message)
         bot = Bot(token=os.environ['TELEGRAM_TOKEN'])
         for msg in messages:
-            # ✅ parse_mode='HTML' 로 변경
             await bot.send_message(chat_id=os.environ['CHAT_ID'], text=msg, parse_mode='HTML')
 
-        # ✅ 중복 제거 후 저장
         updated_history = list(dict.fromkeys(
             t.strip() for t in (new_titles + old_titles) if t.strip()
         ))[:1000]

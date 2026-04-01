@@ -1,14 +1,31 @@
 import os, requests, asyncio, re
 from telegram import Bot
 
+# [강화된 유사도 검사] 글자 단위(Character-level) 비교 방식
 def is_similar(a, b):
-    def clean(text):
+    def clean_for_comparison(text):
+        # 1. HTML 태그 및 엔티티 제거
         text = re.sub(r'<.*?>|&\w+;', '', text)
-        return re.sub(r'[^가-힣a-zA-Z0-9\s]', '', text).split()
-    a_words, b_words = set(clean(a)), set(clean(b))
-    if not a_words or not b_words:
+        # 2. [단독], [속보], (종합) 등 대괄호/괄호와 그 안의 내용 삭제
+        text = re.sub(r'\[.*?\]|\(.*?\)', '', text)
+        # 3. 한글, 영문, 숫자만 남기고 공백까지 싹 제거 (핵심!)
+        return re.sub(r'[^가-힣a-zA-Z0-9]', '', text)
+
+    a_clean = clean_for_comparison(a)
+    b_clean = clean_for_comparison(b)
+
+    if not a_clean or not b_clean:
         return 0
-    return len(a_words & b_words) / min(len(a_words), len(b_words))
+
+    # 글자 단위로 셋(set) 생성
+    set_a = set(a_clean)
+    set_b = set(b_clean)
+
+    # 겹치는 글자 수 계산
+    overlap = len(set_a & set_b)
+    # 두 제목 중 짧은 쪽 글자 수 대비 겹치는 비율 계산
+    # (0.35~0.4 정도면 띄어쓰기나 단어 한두 개 차이는 중복으로 잡아냅니다)
+    return overlap / min(len(set_a), len(set_b))
 
 def escape_html(text):
     return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
@@ -41,7 +58,6 @@ async def main():
             print(f"[{kw}] API 요청 실패: {e}")
             continue
 
-        # ✅ 에러 응답 감지
         if 'items' not in res:
             print(f"[{kw}] 응답 이상: {res}")
             continue
@@ -52,15 +68,16 @@ async def main():
             if len(category_entries) >= 5:
                 break
 
+            # 순수 제목 추출 (비교용)
             title = re.sub(r'<.*?>', '', item['title']).replace('&quot;', '"').replace('&amp;', '&')
 
+            # 유사도 검사 기준을 0.35로 설정 (더 깐깐하게 거름)
             is_duplicate = any(
-                is_similar(title, existing) > 0.4
+                is_similar(title, existing) > 0.35
                 for existing in (old_titles + new_titles)
             )
 
             if not is_duplicate:
-                # ✅ HTML 이스케이프 처리
                 title_safe = escape_html(title)
                 entry = f"📍 {title_safe}\n   🔗 {item['link']}\n"
                 category_entries.append(entry)
@@ -72,7 +89,6 @@ async def main():
 
             if len(current_message) + len(combined_category_text) > 3800:
                 messages.append(current_message)
-                # ✅ 분할 시 헤더 유지
                 current_message = f"📢 (계속)\n{combined_category_text}"
             else:
                 current_message += combined_category_text

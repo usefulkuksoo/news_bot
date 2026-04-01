@@ -18,7 +18,8 @@ async def main():
     else:
         old_titles = []
 
-    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발", "재개발", ",개발행위허가제한", "고속도로", "주민공람"]
+    # 키워드 리스트 (오타 수정 완료)
+    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발", "재개발", "개발행위허가제한", "고속도로", "주민공람"]
     headers = {
         "X-Naver-Client-Id": os.environ['NAVER_ID'], 
         "X-Naver-Client-Secret": os.environ['NAVER_SECRET']
@@ -26,19 +27,18 @@ async def main():
     
     new_titles = []
     messages = []
-    # 전체 메시지의 시작
     current_message = f"📢 오늘의 부동산 뉴스 브리핑\n"
 
     for kw in keywords:
         url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=20&sort=sim"
         res = requests.get(url, headers=headers).json()
         
-        # 이번 카테고리에 추가될 기사들을 임시로 담을 리스트
         category_entries = []
         
         if 'items' in res:
             for item in res['items']:
-                if len(category_entries) >= 3: break # 카테고리당 최대 3개
+                # [여기!] 숫자를 5로 바꾸면 카테고리당 5개씩 가져옵니다.
+                if len(category_entries) >= 5: break 
                 
                 title = item['title'].replace('<b>','').replace('</b>','').replace('&quot;','"')
                 
@@ -49,17 +49,15 @@ async def main():
                         break
                 
                 if not is_duplicate:
-                    # 기사 내용 포맷 (불렛 포인트 사용)
+                    # 가독성을 위해 기사 사이에 공백을 살짝 주었습니다.
                     entry = f"📍 {title}\n   🔗 {item['link']}\n"
                     category_entries.append(entry)
                     new_titles.append(title)
 
-        # 해당 카테고리에 새로운 기사가 있다면, 카테고리 제목을 한 번만 추가하고 기사들을 붙임
         if category_entries:
             kw_header = f"\n🔹 **{kw}**\n"
             combined_category_text = kw_header + "\n".join(category_entries) + "\n"
             
-            # 메시지 길이 체크 (4000자 제한)
             if len(current_message) + len(combined_category_text) > 3800:
                 messages.append(current_message)
                 current_message = combined_category_text
@@ -70,7 +68,6 @@ async def main():
         messages.append(current_message)
         bot = Bot(token=os.environ['TELEGRAM_TOKEN'])
         for msg in messages:
-            # HTML 모드를 사용하여 카테고리명을 굵게 표시
             await bot.send_message(chat_id=os.environ['CHAT_ID'], text=msg, parse_mode='Markdown')
         
         updated_history = (new_titles + old_titles)[:1000]

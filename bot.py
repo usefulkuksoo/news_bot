@@ -18,7 +18,7 @@ async def main():
     else:
         old_titles = []
 
-    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발", "주민공람"]
+    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발", "재개발", ",개발행위허가제한", "고속도로", "주민공람"]
     headers = {
         "X-Naver-Client-Id": os.environ['NAVER_ID'], 
         "X-Naver-Client-Secret": os.environ['NAVER_SECRET']

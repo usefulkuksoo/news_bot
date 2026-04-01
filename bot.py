@@ -1,7 +1,6 @@
 import os, requests, asyncio, re
 from telegram import Bot
 
-# 중복 체크를 위한 유사도 함수 (기존 유지)
 def is_similar(a, b):
     def clean(text):
         text = re.sub(r'\[.*?\]|\(.*?\)', '', text)
@@ -12,7 +11,6 @@ def is_similar(a, b):
     return len(set_a & set_b) / min(len(set_a), len(set_b))
 
 async def main():
-    # 1. 과거에 보냈던 기사 제목 장부(seen_news.txt) 읽기
     history_file = "seen_news.txt"
     if os.path.exists(history_file):
         with open(history_file, "r", encoding="utf-8") as f:
@@ -26,22 +24,24 @@ async def main():
         "X-Naver-Client-Secret": os.environ['NAVER_SECRET']
     }
     
-    new_titles = [] # 이번에 새로 보낼 기사들
+    new_titles = []
     messages = []
-    current_message = f"📢 오늘의 부동산 뉴스 브리핑\n\n"
+    # 전체 메시지의 시작
+    current_message = f"📢 오늘의 부동산 뉴스 브리핑\n"
 
     for kw in keywords:
         url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=20&sort=sim"
         res = requests.get(url, headers=headers).json()
         
-        count = 0 
+        # 이번 카테고리에 추가될 기사들을 임시로 담을 리스트
+        category_entries = []
+        
         if 'items' in res:
             for item in res['items']:
-                if count >= 3: break # 키워드당 3개씩만 (새로운 것 위주)
+                if len(category_entries) >= 3: break # 카테고리당 최대 3개
                 
                 title = item['title'].replace('<b>','').replace('</b>','').replace('&quot;','"')
                 
-                # [핵심] 이번 실행에서의 중복 + 과거 장부와의 중복 모두 체크
                 is_duplicate = False
                 for existing in (old_titles + new_titles):
                     if is_similar(title, existing) > 0.4: 
@@ -49,23 +49,30 @@ async def main():
                         break
                 
                 if not is_duplicate:
-                    entry = f"🔹 {kw}\n- {title}\n- {item['link']}\n\n"
-                    if len(current_message) + len(entry) > 3800:
-                        messages.append(current_message)
-                        current_message = entry
-                    else:
-                        current_message += entry
+                    # 기사 내용 포맷 (불렛 포인트 사용)
+                    entry = f"📍 {title}\n   🔗 {item['link']}\n"
+                    category_entries.append(entry)
                     new_titles.append(title)
-                    count += 1
+
+        # 해당 카테고리에 새로운 기사가 있다면, 카테고리 제목을 한 번만 추가하고 기사들을 붙임
+        if category_entries:
+            kw_header = f"\n🔹 **{kw}**\n"
+            combined_category_text = kw_header + "\n".join(category_entries) + "\n"
+            
+            # 메시지 길이 체크 (4000자 제한)
+            if len(current_message) + len(combined_category_text) > 3800:
+                messages.append(current_message)
+                current_message = combined_category_text
+            else:
+                current_message += combined_category_text
     
-    # 2. 새로운 기사가 있을 때만 전송하고 장부에 기록
     if new_titles:
         messages.append(current_message)
         bot = Bot(token=os.environ['TELEGRAM_TOKEN'])
         for msg in messages:
-            await bot.send_message(chat_id=os.environ['CHAT_ID'], text=msg)
+            # HTML 모드를 사용하여 카테고리명을 굵게 표시
+            await bot.send_message(chat_id=os.environ['CHAT_ID'], text=msg, parse_mode='Markdown')
         
-        # 장부에 새로운 제목들 추가 (최근 1000개만 유지)
         updated_history = (new_titles + old_titles)[:1000]
         with open(history_file, "w", encoding="utf-8") as f:
             for t in updated_history:

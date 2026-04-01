@@ -1,32 +1,32 @@
 name: Real Estate News Bot
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # ✅ 최상단으로 이동
-
 on:
   schedule:
-    # KST 기준: 09:00, 13:00, 19:00
+    # 한국 시간(KST) 기준: 09:00, 13:00, 19:00 
+    # (UTC 기준: 00:00, 04:00, 10:00)
     - cron: '0 0,4,10 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # 수동 실행 버튼 활성화
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # 장부(seen_news.txt)를 저장하기 위한 쓰기 권한
 
     steps:
-      - uses: actions/checkout@v4
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0              # ✅ push 충돌 방지
+          fetch-depth: 0 # 커밋 충돌 방지를 위해 전체 이력 가져오기
 
       - name: 파이썬 설치
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: 필요 도구 설치
-        run: pip install python-telegram-bot requests
+      - name: 필수 라이브러리 설치
+        run: |
+          pip install python-telegram-bot requests
 
       - name: 비서 실행
         env:
@@ -34,14 +34,23 @@ jobs:
           CHAT_ID: ${{ secrets.CHAT_ID }}
           NAVER_ID: ${{ secrets.NAVER_ID }}
           NAVER_SECRET: ${{ secrets.NAVER_SECRET }}
-        run: python main.py
+        # 파일명이 bot.py이므로 정확히 지정합니다.
+        run: python bot.py
 
       - name: 기록 업데이트 (장부 저장)
         run: |
-          git config --global user.name "NewsBot"
-          git config --global user.email "bot@example.com"
-          touch seen_news.txt                          # ✅ 파일 없을 때 대비
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          
+          # seen_news.txt 파일이 없으면 생성
+          touch seen_news.txt
+          
           git add seen_news.txt
-          git diff --staged --quiet && echo "변경 없음" && exit 0
-          git commit -m "Update seen news history"
-          git push
+          
+          # 변경사항이 있을 때만 커밋 및 푸시 (에러 방지)
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -m "Update seen news history [skip ci]"
+            git push
+          else
+            echo "새로운 뉴스가 없어 장부를 업데이트하지 않습니다."
+          fi

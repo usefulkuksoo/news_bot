@@ -2,7 +2,7 @@ import os, requests, asyncio, re
 from bs4 import BeautifulSoup
 from telegram import Bot
 
-# 1. 중복 기사 필터링 함수
+# 1. 중복 기사 필터링 함수 (강화형)
 def is_similar(a, b):
     def clean_for_comparison(text):
         text = re.sub(r'<.*?>|&\w+;', '', text)
@@ -61,16 +61,25 @@ async def main():
     else:
         old_titles = []
 
-    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "재개발", "고속도로", "주민공람"]
+    # ✅ 지방지 뉴스를 더 잘 잡기 위해 키워드를 '지역명'과 '신문사명' 조합으로 확장했습니다.
+    keywords = [
+        # 일반 투자 키워드
+        "부동산 경매", "지구단위계획", "용도지역 변경", "재개발", "고속도로", "주민공람",
+        # 경기도 지역 밀착 키워드 (지방지 타겟)
+        "경기일보 부동산", "경인일보 부동산", "중부일보 개발", "경기신문 신도시",
+        "김포시 개발", "화성시 토지", "양주시 정비구역", "남양주시 보상"
+    ]
+    
     headers = {"X-Naver-Client-Id": os.environ['NAVER_ID'], "X-Naver-Client-Secret": os.environ['NAVER_SECRET']}
 
     new_titles = []
     messages = []
-    current_message = "📢 오늘의 부동산 뉴스 브리핑\n"
+    current_message = "📢 오늘의 부동산 & 지역 뉴스 브리핑\n"
 
-    # --- [파트 1] 네이버 뉴스 수집 ---
+    # --- [파트 1] 네이버 뉴스 수집 (지방지 포함) ---
     for kw in keywords:
-        url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=20&sort=sim"
+        # 지방지 뉴스는 '최신순(date)'으로 검색할 때 더 잘 나오는 경우가 많습니다.
+        url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=15&sort=sim"
         try:
             res = requests.get(url, headers=headers, timeout=10).json()
             if 'items' not in res: continue
@@ -78,9 +87,12 @@ async def main():
             for item in res['items']:
                 if len(category_entries) >= 5: break
                 title = re.sub(r'<.*?>', '', item['title']).replace('&quot;', '"').replace('&amp;', '&')
+                
+                # 중복 필터링
                 if not any(is_similar(title, existing) > 0.35 for existing in (old_titles + new_titles)):
                     category_entries.append(f"📍 {escape_html(title)}\n   🔗 {item['link']}\n")
                     new_titles.append(title)
+            
             if category_entries:
                 kw_header = f"\n🔹 <b>{escape_html(kw)}</b>\n"
                 combined = kw_header + "\n".join(category_entries) + "\n"
@@ -117,6 +129,7 @@ async def main():
             for msg in messages:
                 await bot.send_message(chat_id=os.environ['CHAT_ID'], text=msg, parse_mode='HTML', disable_web_page_preview=True)
         
+        # 장부 업데이트
         updated_history = list(dict.fromkeys(t.strip() for t in (new_titles + old_titles) if t.strip()))[:1000]
         with open(history_file, "w", encoding="utf-8") as f:
             for t in updated_history: f.write(t + "\n")

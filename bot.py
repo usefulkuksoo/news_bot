@@ -1,35 +1,58 @@
 import os, requests, asyncio, re
+from bs4 import BeautifulSoup
 from telegram import Bot
 
-# [강화된 유사도 검사] 글자 단위(Character-level) 비교 방식
+# 1. 중복 기사 필터링 함수
 def is_similar(a, b):
     def clean_for_comparison(text):
-        # 1. HTML 태그 및 엔티티 제거
         text = re.sub(r'<.*?>|&\w+;', '', text)
-        # 2. [단독], [속보], (종합) 등 대괄호/괄호와 그 안의 내용 삭제
         text = re.sub(r'\[.*?\]|\(.*?\)', '', text)
-        # 3. 한글, 영문, 숫자만 남기고 공백까지 싹 제거 (핵심!)
         return re.sub(r'[^가-힣a-zA-Z0-9]', '', text)
-
     a_clean = clean_for_comparison(a)
     b_clean = clean_for_comparison(b)
-
-    if not a_clean or not b_clean:
-        return 0
-
-    # 글자 단위로 셋(set) 생성
-    set_a = set(a_clean)
-    set_b = set(b_clean)
-
-    # 겹치는 글자 수 계산
+    if not a_clean or not b_clean: return 0
+    set_a, set_b = set(a_clean), set(b_clean)
     overlap = len(set_a & set_b)
-    # 두 제목 중 짧은 쪽 글자 수 대비 겹치는 비율 계산
-    # (0.35~0.4 정도면 띄어쓰기나 단어 한두 개 차이는 중복으로 잡아냅니다)
     return overlap / min(len(set_a), len(set_b))
 
 def escape_html(text):
     return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
+# 2. 김포, 화성, 양주, 남양주 고시공고 수집 함수
+def get_combined_city_notices():
+    target_keywords = [
+        "지구단위계획", "지형도면", "용도지역", "도시관리계획", "변경",
+        "주민공람", "공람공고", "보상계획", "손실보상", "토지보상",
+        "실시계획", "인가", "개발행위", "구역지정", "도로", "수용"
+    ]
+    cities = [
+        {"name": "김포시", "url": "https://www.gimpo.go.kr/portal/selectBbsNttList.do?bbsNo=153&key=156", "base_url": "https://www.gimpo.go.kr", "selector": "table.board-list tbody tr"},
+        {"name": "화성시", "url": "https://www.hscity.go.kr/www/user/bbs/BD_selectBbsList.do?q_bbsCode=1019", "base_url": "https://www.hscity.go.kr", "selector": "table.table-list tbody tr"},
+        {"name": "양주시", "url": "https://www.yangju.go.kr/www/selectBbsNttList.do?bbsNo=42&key=197", "base_url": "https://www.yangju.go.kr", "selector": "table.bbs-list tbody tr"},
+        {"name": "남양주시", "url": "https://www.nyj.go.kr/www/selectBbsNttList.do?bbsNo=131&key=465", "base_url": "https://www.nyj.go.kr", "selector": "table.board-list tbody tr"}
+    ]
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    all_notices = []
+
+    for city in cities:
+        try:
+            response = requests.get(city['url'], headers=headers, timeout=15)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            rows = soup.select(city['selector'])
+            for row in rows:
+                title_elem = row.select_one('td.left a') or row.select_one('td.subject a') or row.select_one('a')
+                if not title_elem: continue
+                title = title_elem.get_text(strip=True)
+                matched = [kw for kw in target_keywords if kw in title]
+                if matched:
+                    link = title_elem['href']
+                    full_link = city['base_url'] + link if link.startswith('/') else link
+                    all_notices.append({"city": city['name'], "tag": f"#{matched[0]}", "title": title, "link": full_link})
+        except Exception as e:
+            print(f"{city['name']} 수집 실패: {e}")
+    return all_notices
+
+# 3. 메인 실행 함수
 async def main():
     history_file = "seen_news.txt"
     if os.path.exists(history_file):
@@ -38,76 +61,65 @@ async def main():
     else:
         old_titles = []
 
-    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "역세권 개발",
-                "재개발", "개발행위허가제한", "고속도로", "주민공람","신통기획",
-                "지구단위계획"]
-    headers = {
-        "X-Naver-Client-Id": os.environ['NAVER_ID'],
-        "X-Naver-Client-Secret": os.environ['NAVER_SECRET']
-    }
+    keywords = ["부동산 경매", "지구단위계획", "용도지역 변경", "재개발", "고속도로", "주민공람"]
+    headers = {"X-Naver-Client-Id": os.environ['NAVER_ID'], "X-Naver-Client-Secret": os.environ['NAVER_SECRET']}
 
     new_titles = []
     messages = []
     current_message = "📢 오늘의 부동산 뉴스 브리핑\n"
 
+    # --- [파트 1] 네이버 뉴스 수집 ---
     for kw in keywords:
         url = f"https://openapi.naver.com/v1/search/news.json?query={kw}&display=20&sort=sim"
-
         try:
             res = requests.get(url, headers=headers, timeout=10).json()
-        except Exception as e:
-            print(f"[{kw}] API 요청 실패: {e}")
-            continue
+            if 'items' not in res: continue
+            category_entries = []
+            for item in res['items']:
+                if len(category_entries) >= 5: break
+                title = re.sub(r'<.*?>', '', item['title']).replace('&quot;', '"').replace('&amp;', '&')
+                if not any(is_similar(title, existing) > 0.35 for existing in (old_titles + new_titles)):
+                    category_entries.append(f"📍 {escape_html(title)}\n   🔗 {item['link']}\n")
+                    new_titles.append(title)
+            if category_entries:
+                kw_header = f"\n🔹 <b>{escape_html(kw)}</b>\n"
+                combined = kw_header + "\n".join(category_entries) + "\n"
+                if len(current_message) + len(combined) > 3800:
+                    messages.append(current_message)
+                    current_message = f"📢 (계속)\n{combined}"
+                else:
+                    current_message += combined
+        except Exception as e: print(f"뉴스 수집 에러: {e}")
 
-        if 'items' not in res:
-            print(f"[{kw}] 응답 이상: {res}")
-            continue
+    # --- [파트 2] 지자체 고시공고 수집 ---
+    city_notices = get_combined_city_notices()
+    if city_notices:
+        notice_text = "\n🏛️ <b>지자체 핵심 고시 (김포·화성·양주·남양주)</b>\n"
+        notice_text += "━━━━━━━━━━━━━━━━━━\n"
+        current_city = ""
+        for n in city_notices:
+            if current_city != n['city']:
+                notice_text += f"\n📍 <b>{n['city']}</b>\n"
+                current_city = n['city']
+            notice_text += f"• {n['tag']} {escape_html(n['title'])}\n  🔗 <a href='{n['link']}'>공고보기</a>\n"
+        
+        if len(current_message) + len(notice_text) > 3800:
+            messages.append(current_message)
+            current_message = notice_text
+        else:
+            current_message += notice_text
 
-        category_entries = []
-
-        for item in res['items']:
-            if len(category_entries) >= 5:
-                break
-
-            # 순수 제목 추출 (비교용)
-            title = re.sub(r'<.*?>', '', item['title']).replace('&quot;', '"').replace('&amp;', '&')
-
-            # 유사도 검사 기준을 0.35로 설정 (더 깐깐하게 거름)
-            is_duplicate = any(
-                is_similar(title, existing) > 0.35
-                for existing in (old_titles + new_titles)
-            )
-
-            if not is_duplicate:
-                title_safe = escape_html(title)
-                entry = f"📍 {title_safe}\n   🔗 {item['link']}\n"
-                category_entries.append(entry)
-                new_titles.append(title)
-
-        if category_entries:
-            kw_header = f"\n🔹 <b>{escape_html(kw)}</b>\n"
-            combined_category_text = kw_header + "\n".join(category_entries) + "\n"
-
-            if len(current_message) + len(combined_category_text) > 3800:
-                messages.append(current_message)
-                current_message = f"📢 (계속)\n{combined_category_text}"
-            else:
-                current_message += combined_category_text
-
-    if new_titles:
+    # --- [파트 3] 전송 및 저장 ---
+    if new_titles or city_notices:
         messages.append(current_message)
         bot = Bot(token=os.environ['TELEGRAM_TOKEN'])
-        for msg in messages:
-            await bot.send_message(chat_id=os.environ['CHAT_ID'], text=msg, parse_mode='HTML')
-
-        updated_history = list(dict.fromkeys(
-            t.strip() for t in (new_titles + old_titles) if t.strip()
-        ))[:1000]
+        async with bot:
+            for msg in messages:
+                await bot.send_message(chat_id=os.environ['CHAT_ID'], text=msg, parse_mode='HTML', disable_web_page_preview=True)
+        
+        updated_history = list(dict.fromkeys(t.strip() for t in (new_titles + old_titles) if t.strip()))[:1000]
         with open(history_file, "w", encoding="utf-8") as f:
-            for t in updated_history:
-                f.write(t + "\n")
-    else:
-        print("새로운 뉴스가 없습니다.")
+            for t in updated_history: f.write(t + "\n")
 
 if __name__ == "__main__":
     asyncio.run(main())

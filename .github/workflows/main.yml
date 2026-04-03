@@ -1,50 +1,50 @@
 name: Real Estate News Bot
 
-# ── 언제 실행할지 ──
 on:
   schedule:
-    # 한국시간 09:00, 13:00, 19:00  →  UTC 00:00, 04:00, 10:00
+    # 한국시간 09:00, 13:00, 19:00 (UTC 00:00, 04:00, 10:00)
     - cron: "0 0,4,10 * * *"
-  workflow_dispatch:          # 수동 실행 버튼도 생성
+  workflow_dispatch: # 수동 실행 버튼
 
-# ── 실제 작업 정의 ──
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    # ✅ 1. 장부 저장을 위한 권한 추가 (필수)
+    permissions:
+      contents: write
 
     steps:
-      # ① 레포지토리 코드 가져오기
       - uses: actions/checkout@v4
 
-      # ② Python 환경 설치
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"   # 원하는 버전
+          python-version: "3.10"
 
-      # ③ 의존 패키지 설치
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt   # ← 아래 requirements.txt 예시 참고
+          # ✅ 2. requirements.txt 대신 직접 설치로 변경 (실수 방지)
+          pip install python-telegram-bot requests beautifulsoup4
 
-      # ④ 스크립트 실행
-      - name: Run news‑briefing script
+      - name: Run news-briefing script
         env:
           NAVER_ID: ${{ secrets.NAVER_ID }}
           NAVER_SECRET: ${{ secrets.NAVER_SECRET }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: python main.py   # ← 여기서 루트에 있는 main.py 를 실행
+        # ✅ 3. 파일 이름을 bot.py로 수정
+        run: python bot.py
 
-      # ⑤ 히스토리 파일(commit) & push
       - name: Commit updated seen_news.txt
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          # 장부 파일이 없으면 생성
+          touch seen_news.txt
           git add seen_news.txt
-          # 변화가 없으면 커밋 안 함
+          # 변화가 없으면 커밋 안 함 (에러 방지)
           git diff --quiet && git diff --staged --quiet || (
-            git commit -m "🤖 Update seen_news.txt (auto‑bot)"
+            git commit -m "🤖 Update seen_news.txt (auto-bot)"
             git push
           )

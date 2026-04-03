@@ -26,7 +26,8 @@ jobs:
 
       - name: 필수 라이브러리 설치
         run: |
-          pip install python-telegram-bot requests
+          # ✅ beautifulsoup4 를 추가했습니다.
+          pip install python-telegram-bot requests beautifulsoup4
 
       - name: 비서 실행
         env:
